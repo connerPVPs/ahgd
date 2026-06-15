@@ -7,11 +7,6 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-    - name: Install SSH and Tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y openssh-server
-
     - name: Configure User Password
       run: |
         # Sets the password for the default 'runner' user to 'P@ssw0rd!'
@@ -25,6 +20,21 @@ jobs:
     - name: Authenticate Ngrok
       run: ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
 
-    - name: Start SSH Tunnel
-      run: ngrok tcp 22
+    - name: Start SSH Tunnel in Background
+      run: |
+        # The '&' runs ngrok in the background so the script can move to the next steps
+        ngrok tcp 22 --log=stdout > ngrok.log &
 
+    - name: Display SSH Connection Info
+      run: |
+        # Give Ngrok 5 seconds to initialize and boot up
+        sleep 5
+        # Fetch the public URL allocated to you by Ngrok
+        curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+
+    - name: Keep Tunnel Alive
+      run: |
+        # This keeps the runner active for 1 hour so it doesn't instantly close.
+        # If you finish early, just click "Cancel workflow" in GitHub Actions.
+        echo "Tunnel is live! Keeping active for 60 minutes..."
+        sleep 3600
