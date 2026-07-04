@@ -1,4 +1,4 @@
-name: Win RDP via cloudflared
+name: CI
 
 on: [push, workflow_dispatch]
 
@@ -7,34 +7,47 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Download cloudflared
-      run: Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflared.exe"
-
+    - name: Download
+      run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+    - name: Extract
+      run: Expand-Archive ngrok.zip
+    - name: Auth
+      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
     - name: Enable TS
       run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
     - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
     - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
     - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
-
-    - name: Start tunnel
+    - name: Create Tunnel
       run: |
-        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel","--no-autoupdate","--url","tcp://localhost:3389" -NoNewWindow -RedirectStandardOutput "cf.log" -RedirectStandardError "cf.err.log"
+        Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp","3389","--region","in" -NoNewWindow
 
-        $deadline = (Get-Date).AddSeconds(45)
+        $deadline = (Get-Date).AddSeconds(30)
         $url = $null
         while ((Get-Date) -lt $deadline -and -not $url) {
           Start-Sleep -Seconds 2
-          $content = (Get-Content "cf.log","cf.err.log" -Raw -ErrorAction SilentlyContinue) -join "`n"
-          if ($content -match '(?:https?://)?([a-z0-9-]+\.trycloudflare\.com)') {
-            $url = "$($Matches[1]):3389"
-          }
+          try {
+            $api = Invoke-RestMethod http://localhost:4040/api/tunnels -ErrorAction SilentlyContinue
+            if ($api.tunnels.Count -gt 0) {
+              $url = $api.tunnels[0].public_url -replace '^tcp://',''
+            }
+          } catch {}
         }
-        if (-not $url) { throw "cloudflared tunnel did not start" }
+        if (-not $url) {
+          Write-Host "==========================================="
+          Write-Host "ngrok failed to start. If you see an error about region, your free plan is US-only. Drop the --region flag and try again."
+          Write-Host "==========================================="
+          throw "ngrok did not come up"
+        }
 
-        Write-Host "========================================="
+        Write-Host "==========================================="
+        Write-Host "Windows RDP Server is LIVE!"
+        Write-Host ""
         Write-Host "RDP Host: $url"
         Write-Host "Username: runneradmin"
         Write-Host "Password: P@ssw0rd!"
-        Write-Host "========================================="
+        Write-Host "==========================================="
 
         Start-Sleep -Seconds 3600
