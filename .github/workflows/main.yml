@@ -4,7 +4,7 @@ on: [push, workflow_dispatch]
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2019
 
     steps:
     - name: Download
@@ -19,10 +19,10 @@ jobs:
       run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
     - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
     - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
+    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "admin123@" -Force)
     - name: Create Tunnel
       run: |
-        Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp","3389","--region","in" -NoNewWindow
+        Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp","3389" -NoNewWindow
 
         $deadline = (Get-Date).AddSeconds(30)
         $url = $null
@@ -35,12 +35,7 @@ jobs:
             }
           } catch {}
         }
-        if (-not $url) {
-          Write-Host "==========================================="
-          Write-Host "ngrok failed to start. If you see an error about region, your free plan is US-only. Drop the --region flag and try again."
-          Write-Host "==========================================="
-          throw "ngrok did not come up"
-        }
+        if (-not $url) { throw "ngrok did not come up" }
 
         Write-Host "==========================================="
         Write-Host "Windows RDP Server is LIVE!"
