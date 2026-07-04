@@ -4,7 +4,6 @@ on: [push, workflow_dispatch]
 
 jobs:
   build:
-
     runs-on: windows-latest
 
     steps:
@@ -22,4 +21,31 @@ jobs:
     - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
     - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
     - name: Create Tunnel
-      run: .\ngrok\ngrok.exe tcp 3389 
+      run: |
+        # Start ngrok in background so the URL can be printed and the workflow stays alive
+        Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp","3389" -NoNewWindow
+
+        # Wait for ngrok to bind and report its tunnel
+        $deadline = (Get-Date).AddSeconds(30)
+        $url = $null
+        while ((Get-Date) -lt $deadline -and -not $url) {
+          Start-Sleep -Seconds 2
+          try {
+            $api = Invoke-RestMethod http://localhost:4040/api/tunnels -ErrorAction SilentlyContinue
+            if ($api.tunnels.Count -gt 0) {
+              $url = $api.tunnels[0].public_url -replace '^tcp://',''
+            }
+          } catch {}
+        }
+        if (-not $url) { throw "ngrok did not come up" }
+
+        Write-Host "========================================="
+        Write-Host "Windows RDP Server is LIVE!"
+        Write-Host ""
+        Write-Host "RDP Host: $url"
+        Write-Host "Username: runneradmin"
+        Write-Host "Password: P@ssw0rd!"
+        Write-Host "========================================="
+
+        # Keep the workflow alive for 1 hour
+        Start-Sleep -Seconds 3600
