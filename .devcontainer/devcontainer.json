@@ -1,10 +1,8 @@
 {
-  "name": "Persistent RDP Codespace",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
-  "postStartCommand": "bash /usr/local/bin/start-rdp.sh",
+  "name": "Windows RDP Codespace",
+  "image": "mcr.microsoft.com/devcontainers/windows/base:2022",
+  "postStartCommand": "powershell -ExecutionPolicy Bypass -File .devcontainer\\start-rdp.ps1",
   "forwardPorts": [3389, 4040],
-  "containerUser": "root",
-  "remoteUser": "root"
+  "containerUser": "ContainerAdministrator",
+  "remoteUser": "ContainerAdministrator"
 }
