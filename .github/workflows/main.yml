@@ -1,71 +1,25 @@
-name: Win RDP via ngrok
+name: CI
 
 on: [push, workflow_dispatch]
 
 jobs:
   build:
+
     runs-on: windows-latest
 
     steps:
-      - name: Download ngrok
-        shell: powershell
-        run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-
-      - name: Extract ngrok
-        shell: powershell
-        run: Expand-Archive ngrok.zip
-
-      - name: Auth ngrok
-        shell: powershell
-        run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
-        env:
-          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-
-      - name: Enable RDP
-        shell: powershell
-        run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
-          Set-Service TermService -StartupType 'Automatic'
-          Start-Service TermService
-
-      - name: Set user password
-        shell: powershell
-        run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
-
-      - name: Start ngrok tunnel
-        shell: powershell
-        run: |
-          Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp","3389" -NoNewWindow
-
-          # Wait for ngrok to come up and grab the public URL from its local API
-          $timeout = (Get-Date).AddSeconds(30)
-          $url = $null
-          while ((Get-Date) -lt $timeout -and -not $url) {
-            Start-Sleep -Seconds 2
-            try {
-              $api = Invoke-RestMethod http://localhost:4040/api/tunnels -ErrorAction SilentlyContinue
-              if ($api.tunnels.Count -gt 0) {
-                $url = $api.tunnels[0].public_url -replace '^tcp://',''
-              }
-            } catch {}
-          }
-          if (-not $url) { throw "ngrok did not report a tunnel within 30s" }
-          Add-Content "ngrok-url.txt" $url
-
-      - name: Show connection info
-        shell: powershell
-        run: |
-          $url = (Get-Content "ngrok-url.txt" -Raw).Trim()
-          Write-Host "========================================="
-          Write-Host "Windows RDP Server is LIVE!"
-          Write-Host ""
-          Write-Host "RDP Host: $url"
-          Write-Host "Username: runneradmin"
-          Write-Host "Password: P@ssw0rd!"
-          Write-Host "========================================="
-
-      - name: Keep alive
-        shell: powershell
-        run: Start-Sleep -Seconds 3600
+    - name: Download
+      run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+    - name: Extract
+      run: Expand-Archive ngrok.zip
+    - name: Auth
+      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Enable TS
+      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
+    - name: Create Tunnel
+      run: .\ngrok\ngrok.exe tcp 3389 
