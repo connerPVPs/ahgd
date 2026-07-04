@@ -1,0 +1,10 @@
+{
+  "name": "Persistent RDP Codespace",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "postStartCommand": "bash /usr/local/bin/start-rdp.sh",
+  "forwardPorts": [3389, 4040],
+  "containerUser": "root",
+  "remoteUser": "root"
+}
