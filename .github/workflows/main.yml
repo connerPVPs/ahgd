@@ -1,48 +1,72 @@
-name: CI
+name: Windows RDP
 
-on: [push, workflow_dispatch]
+on:
+  workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: windows-2019
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
 
     steps:
-    - name: Download
-      run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-    - name: Extract
-      run: Expand-Archive ngrok.zip
-    - name: Auth
-      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
-      env:
-        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-    - name: Enable TS
-      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
-    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "admin123@" -Force)
-    - name: Create Tunnel
-      run: |
-        Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp","3389" -NoNewWindow
+      - name: Download & extract ngrok
+        run: |
+          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+          if ((Get-Item ngrok.zip).Length -lt 1MB) { throw "ngrok download appears to have failed (file too small)" }
+          Expand-Archive ngrok.zip -Force
+          $ngrok = Get-ChildItem -Recurse -Filter ngrok.exe | Select-Object -First 1
+          if (-not $ngrok) { throw "ngrok.exe not found after extraction" }
+          Move-Item $ngrok.FullName -Destination .\ngrok.exe -Force
+          .\ngrok.exe --version
 
-        $deadline = (Get-Date).AddSeconds(30)
-        $url = $null
-        while ((Get-Date) -lt $deadline -and -not $url) {
-          Start-Sleep -Seconds 2
-          try {
-            $api = Invoke-RestMethod http://localhost:4040/api/tunnels -ErrorAction SilentlyContinue
-            if ($api.tunnels.Count -gt 0) {
-              $url = $api.tunnels[0].public_url -replace '^tcp://',''
-            }
-          } catch {}
-        }
-        if (-not $url) { throw "ngrok did not come up" }
+      - name: Authenticate ngrok
+        run: .\ngrok.exe config add-authtoken $env:NGROK_AUTH_TOKEN
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
 
-        Write-Host "==========================================="
-        Write-Host "Windows RDP Server is LIVE!"
-        Write-Host ""
-        Write-Host "RDP Host: $url"
-        Write-Host "Username: runneradmin"
-        Write-Host "Password: P@ssw0rd!"
-        Write-Host "==========================================="
+      - name: Enable RDP & clear password
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Lsa' -Name "LimitBlankPasswordUse" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
 
-        Start-Sleep -Seconds 3600
+          # Relax local password policy so a blank password is allowed
+          $cfg = @(
+            '[Version]',
+            'signature="$CHICAGO$"',
+            'Revision=1',
+            '',
+            '[System Access]',
+            'MinimumPasswordLength = 0',
+            'PasswordComplexity = 0'
+          )
+          $cfg | Out-File -Encoding unicode C:\sec.cfg
+          secedit /configure /db C:\windows\security\local.sdb /cfg C:\sec.cfg /areas SECURITYPOLICY
+          gpupdate /force
+
+          # Set runneradmin password to empty
+          $user = [ADSI]"WinNT://localhost/runneradmin"
+          $user.SetPassword("")
+
+      - name: Start ngrok tunnel
+        run: Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389"
+
+      - name: Show connection info
+        run: |
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              $tunnels = Invoke-RestMethod http://127.0.0.1:4040/api/tunnels
+              $tcp = $tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' } | Select-Object -First 1
+              if ($tcp) {
+                Write-Host "=========================================="
+                Write-Host "RDP Address : $($tcp.public_url)"
+                Write-Host "Username    : runneradmin"
+                Write-Host "Password    : (blank - leave empty)"
+                Write-Host "=========================================="
+                break
+              }
+            } catch {}
+            Start-Sleep -Seconds 2
+          }
+          while ($true) { Start-Sleep -Seconds 60 }
