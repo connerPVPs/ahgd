@@ -51,7 +51,7 @@ jobs:
 
       - name: Start ngrok tunnel & show connection info
         run: |
-          Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp","--region","ap","3389" -RedirectStandardOutput ngrok.log -RedirectStandardError ngrok.err
+          Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp","--region","in","3389" -RedirectStandardOutput ngrok.log -RedirectStandardError ngrok.err
           Start-Sleep -Seconds 3
           for ($i = 0; $i -lt 60; $i++) {
             $ngrokProcess = Get-Process ngrok -ErrorAction SilentlyContinue
