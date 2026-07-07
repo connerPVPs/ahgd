@@ -49,11 +49,10 @@ jobs:
           $user = [ADSI]"WinNT://localhost/runneradmin"
           $user.SetPassword("")
 
-      - name: Start ngrok tunnel
-        run: Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp","3389","--log=stdout","--log-format=json" -RedirectStandardOutput ngrok.log -RedirectStandardError ngrok.err
-
-      - name: Show connection info
+      - name: Start ngrok tunnel & show connection info
         run: |
+          Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp","3389" -RedirectStandardOutput ngrok.log -RedirectStandardError ngrok.err
+          Start-Sleep -Seconds 3
           for ($i = 0; $i -lt 60; $i++) {
             $ngrokProcess = Get-Process ngrok -ErrorAction SilentlyContinue
             if (-not $ngrokProcess) {
