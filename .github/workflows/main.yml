@@ -6,7 +6,7 @@ on:
 jobs:
   rdp:
     runs-on: windows-latest
-    timeout-minutes: 36000
+    timeout-minutes: 360
 
     steps:
       - name: Download & extract ngrok
@@ -50,11 +50,15 @@ jobs:
           $user.SetPassword("")
 
       - name: Start ngrok tunnel
-        run: Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389"
+        run: Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp","3389","--log=stdout","--log-format=json" -RedirectStandardOutput ngrok.log -RedirectStandardError ngrok.err
 
       - name: Show connection info
         run: |
-          for ($i = 0; $i -lt 30; $i++) {
+          for ($i = 0; $i -lt 60; $i++) {
+            $ngrokProcess = Get-Process ngrok -ErrorAction SilentlyContinue
+            if (-not $ngrokProcess) {
+              Write-Host "WARNING: ngrok process is not running."
+            }
             try {
               $tunnels = Invoke-RestMethod http://127.0.0.1:4040/api/tunnels
               $tcp = $tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' } | Select-Object -First 1
@@ -66,7 +70,18 @@ jobs:
                 Write-Host "=========================================="
                 break
               }
-            } catch {}
+            } catch {
+              Write-Host "Waiting for ngrok API... ($i)"
+            }
+            if (Test-Path ngrok.log) {
+              $lastLog = Get-Content ngrok.log -Tail 5
+              Write-Host "Recent ngrok log:"
+              $lastLog | ForEach-Object { Write-Host $_ }
+            }
             Start-Sleep -Seconds 2
+          }
+          if (Test-Path ngrok.err) {
+            Write-Host "===== ngrok stderr ====="
+            Get-Content ngrok.err | ForEach-Object { Write-Host $_ }
           }
           while ($true) { Start-Sleep -Seconds 60 }
