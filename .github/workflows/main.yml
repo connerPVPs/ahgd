@@ -49,10 +49,11 @@ jobs:
           $user = [ADSI]"WinNT://localhost/runneradmin"
           $user.SetPassword("")
 
-      - name: Start ngrok tunnel & show connection info
+      - name: Start ngrok tunnel & save connection info
         run: |
           Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp","--region","in","3389" -RedirectStandardOutput ngrok.log -RedirectStandardError ngrok.err
           Start-Sleep -Seconds 3
+          $found = $false
           for ($i = 0; $i -lt 60; $i++) {
             $ngrokProcess = Get-Process ngrok -ErrorAction SilentlyContinue
             if (-not $ngrokProcess) {
@@ -62,11 +63,14 @@ jobs:
               $tunnels = Invoke-RestMethod http://127.0.0.1:4040/api/tunnels
               $tcp = $tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' } | Select-Object -First 1
               if ($tcp) {
+                $address = $tcp.public_url -replace '^tcp://',''
                 Write-Host "=========================================="
-                Write-Host "RDP Address : $($tcp.public_url)"
+                Write-Host "RDP Address : $address"
                 Write-Host "Username    : runneradmin"
                 Write-Host "Password    : (blank - leave empty)"
                 Write-Host "=========================================="
+                $address | Out-File -FilePath tcp_url.txt -Encoding utf8 -NoNewline
+                $found = $true
                 break
               }
             } catch {
@@ -79,8 +83,23 @@ jobs:
             }
             Start-Sleep -Seconds 2
           }
-          if (Test-Path ngrok.err) {
-            Write-Host "===== ngrok stderr ====="
-            Get-Content ngrok.err | ForEach-Object { Write-Host $_ }
+          if (-not $found) {
+            if (Test-Path ngrok.err) {
+              Write-Host "===== ngrok stderr ====="
+              Get-Content ngrok.err | ForEach-Object { Write-Host $_ }
+            }
+            throw "Failed to get ngrok tunnel URL"
           }
+
+      - name: Upload connection info
+        uses: actions/upload-artifact@v4
+        with:
+          name: connection-info
+          path: tcp_url.txt
+          retention-days: 1
+
+      - name: Keep session alive
+        run: |
+          Write-Host "RDP session is active. Workflow will run for up to 6 hours."
+          Write-Host "Cancel this workflow from GitHub when you are done."
           while ($true) { Start-Sleep -Seconds 60 }
