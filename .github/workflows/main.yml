@@ -13,7 +13,7 @@ env:
 
 jobs:
   ngrok-rdp:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 9999
 
     steps:
@@ -49,6 +49,19 @@ jobs:
           Get-ChildItem "C:\Windows\Temp" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
           Get-ChildItem "C:\Windows\Prefetch" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
           Get-ChildItem "C:\Users\Public\Desktop" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+          reg load HKU\DefaultHive "C:\Users\Default\NTUSER.DAT"
+          reg add "HKU\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v AppsUseLightTheme /t REG_DWORD /d 0 /f
+          reg add "HKU\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v SystemUsesLightTheme /t REG_DWORD /d 0 /f
+          reg add "HKU\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarSmallIcons /t REG_DWORD /d 1 /f
+          reg unload HKU\DefaultHive
+
+      - name: Install Discord
+        run: |
+          Invoke-WebRequest "https://discord.com/api/download?platform=win" -OutFile "C:\Users\Public\Downloads\DiscordSetup.exe"
+          reg load HKU\DefaultHive "C:\Users\Default\NTUSER.DAT"
+          reg add "HKU\DefaultHive\Software\Microsoft\Windows\CurrentVersion\RunOnce" /v InstallDiscord /t REG_SZ /d "C:\Users\Public\Downloads\DiscordSetup.exe /s" /f
+          reg unload HKU\DefaultHive
 
       - name: Download Ngrok
         run: |
