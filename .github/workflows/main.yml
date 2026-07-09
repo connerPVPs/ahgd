@@ -73,7 +73,7 @@ jobs:
                 $tunnels = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels
                 $ngrokUrl = ($tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' }).public_url
               } catch {
-                Write-Host "Attempt $attempts: Waiting for Ngrok to start..."
+                Write-Host ("Attempt ${attempts}: Waiting for Ngrok to start...")
               }
             }
             if (-not $ngrokUrl) {
