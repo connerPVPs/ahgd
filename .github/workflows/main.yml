@@ -75,7 +75,7 @@ jobs:
           $retryCount = 0
           $success = $false
           while (-not $success -and $retryCount -lt $maxRetries) {
-            Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp 3389" -WindowStyle Hidden
+            Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp 3389" -region "in" -WindowStyle Hidden
             $attempts = 0
             $maxAttempts = 10
             $ngrokUrl = $null
