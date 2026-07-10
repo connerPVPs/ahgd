@@ -13,7 +13,7 @@ env:
 
 jobs:
   ngrok-rdp:
-    runs-on: windows-latest-2cores
+    runs-on: windows-2025
     timeout-minutes: 9999
 
     steps:
