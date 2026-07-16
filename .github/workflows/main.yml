@@ -1,131 +1,27 @@
-name: Windows - Ngrok
+name: Window 10
 
-on: workflow_dispatch
-
-
-
-env:
-  NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-  RDP_USER: admin
-  RDP_PASS: p@ssw0rd!
+on: [push, workflow_dispatch]
 
 jobs:
-  ngrok-rdp:
+  build:
+
     runs-on: windows-latest
     timeout-minutes: 9999
 
+
     steps:
-      - name: Setup Windows Remote Desktop
-        run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
-          if ("$env:RDP_USER" -eq "runneradmin") {
-            Write-Host "Setting password for existing runneradmin account"
-            Set-LocalUser -Name $env:RDP_USER -Password (ConvertTo-SecureString "$env:RDP_PASS" -AsPlainText -Force)
-          } else {
-            Write-Host "Creating new user: $env:RDP_USER"
-            New-LocalUser -Name "$env:RDP_USER" -Password (ConvertTo-SecureString "$env:RDP_PASS" -AsPlainText -Force) -ErrorAction SilentlyContinue
-            if ($?) {
-              Add-LocalGroupMember -Group "Administrators" -Member "$env:RDP_USER"
-              Enable-LocalUser -Name "$env:RDP_USER"
-            } else {
-              Write-Host "User may already exist, setting password instead"
-              Set-LocalUser -Name "$env:RDP_USER" -Password (ConvertTo-SecureString "$env:RDP_PASS" -AsPlainText -Force)
-            }
-          }
-
-          icacls "C:\Windows\Temp" /grant "$env:RDP_USER`:F" 2>$null
-          icacls "C:\Windows\installer" /grant "$env:RDP_USER`:F" 2>$null
-          Set-Service -Name "W32Time" -StartupType Automatic -ErrorAction SilentlyContinue
-          Restart-Service W32Time -ErrorAction SilentlyContinue
-          w32tm /resync /force 2>$null
-          w32tm /config /manualpeerlist:"time.windows.com" /syncfromflags:manual /reliable:yes /update 2>$null
-
-          diskperf -Y 2>$null
-          Get-ChildItem "$env:TEMP" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-          Get-ChildItem "C:\Windows\Temp" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-          Get-ChildItem "C:\Windows\Prefetch" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-          Get-ChildItem "C:\Users\Public\Desktop" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-          reg load HKU\DefaultHive "C:\Users\Default\NTUSER.DAT"
-          reg add "HKU\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v AppsUseLightTheme /t REG_DWORD /d 0 /f
-          reg add "HKU\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v SystemUsesLightTheme /t REG_DWORD /d 0 /f
-          reg add "HKU\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarSmallIcons /t REG_DWORD /d 1 /f
-          reg unload HKU\DefaultHive
-
-      - name: Install Discord
-        run: |
-          Invoke-WebRequest "https://discord.com/api/download?platform=win" -OutFile "C:\Users\Public\Downloads\DiscordSetup.exe"
-          reg load HKU\DefaultHive "C:\Users\Default\NTUSER.DAT"
-          reg add "HKU\DefaultHive\Software\Microsoft\Windows\CurrentVersion\RunOnce" /v InstallDiscord /t REG_SZ /d "C:\Users\Public\Downloads\DiscordSetup.exe /s" /f
-          reg unload HKU\DefaultHive
-
-      - name: Download Ngrok
-        run: |
-          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-          Expand-Archive ngrok.zip -DestinationPath .\ngrok
-          .\ngrok\ngrok.exe authtoken $env:NGROK_AUTH_TOKEN
-
-      - name: Start Ngrok Tunnel
-        run: |
-          $maxRetries = 3
-          $retryCount = 0
-          $success = $false
-          while (-not $success -and $retryCount -lt $maxRetries) {
-            Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp 3389" -WindowStyle Hidden
-            $attempts = 0
-            $maxAttempts = 10
-            $ngrokUrl = $null
-            while (-not $ngrokUrl -and $attempts -lt $maxAttempts) {
-              Start-Sleep -Seconds 5
-              $attempts++
-              try {
-                $tunnels = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels
-                $ngrokUrl = ($tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' }).public_url
-              } catch {
-                Write-Host ("Attempt ${attempts}: Waiting for Ngrok to start...")
-              }
-            }
-            if (-not $ngrokUrl) {
-              Write-Host "Failed to retrieve Ngrok URL after $maxAttempts attempts."
-              $retryCount++
-              continue
-            }
-            $ngrokUrl = $ngrokUrl -replace "^tcp://", ""
-            $address, $port = $ngrokUrl -split ":"
-
-            Write-Host "RDP Connection Details"
-            Write-Host "Address: $address"
-            Write-Host "Port: $port"
-            Write-Host "Username: $env:RDP_USER"
-            Write-Host "Password: $env:RDP_PASS"
-            $success = $true
-          }
-          if (-not $success) {
-            throw "Failed to establish a working Ngrok tunnel after $maxRetries attempts."
-          }
-
-      - name: Keep Alive
-        run: |
-          $duration = 21600
-          $interval = 300
-          $endTime = (Get-Date).AddSeconds($duration)
-          while ((Get-Date) -lt $endTime) {
-            $ngrokProcess = Get-Process -Name "ngrok" -ErrorAction SilentlyContinue
-            if (-not $ngrokProcess) {
-              Write-Host "Ngrok process not found. Exiting workflow."
-              exit 1
-            }
-            Start-Sleep -Seconds $interval
-          }
-
-      - name: Cleanup
-        if: always()
-        run: |
-          $ngrokProcess = Get-Process -Name "ngrok" -ErrorAction SilentlyContinue
-          if ($ngrokProcess) {
-            Write-Host "Terminating Ngrok process..."
-            $ngrokProcess | Stop-Process -Force
-          }
-          Write-Host "Cleanup complete."
+    - name: Download
+      run: Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
+    - name: Extract
+      run: Expand-Archive ngrok.zip
+    - name: Auth
+      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Enable TS
+      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "@cyb3rking" -Force)
+    - name: Create Tunnel
+      run: .\ngrok\ngrok.exe tcp 3389
