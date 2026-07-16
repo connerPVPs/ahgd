@@ -1,7 +1,6 @@
 name: Windows - Ngrok
 on: push
 
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -39,11 +38,13 @@ jobs:
         w32tm /config /manualpeerlist:"time.windows.com" /syncfromflags:manual /reliable:yes /update *>$null
         
         diskperf -Y *>$null
-        "$env:TEMP\*" | Remove-Item -Recurse -Force
-        "C:\Windows\Temp\*" | Remove-Item -Recurse -Force
-        "C:\Windows\Prefetch\*" | Remove-Item -Recurse -Force
-        "C:\Users\Public\Desktop\*" | Remove-Item -Recurse -Force
-        (New-Object -ComObject Shell.Application).Namespace(0xA).Items() | %{Remove-Item $_.Path -Recurse -Confirm:$false}
+        # FIX: Added -ErrorAction SilentlyContinue to skip over locked system files
+        Get-ChildItem -Path "$env:TEMP\*" -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path "C:\Windows\Temp\*" -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path "C:\Windows\Prefetch\*" -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path "C:\Users\Public\Desktop\*" -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        
+        (New-Object -ComObject Shell.Application).Namespace(0xA).Items() | %{Remove-Item $_.Path -Recurse -Confirm:$false -ErrorAction SilentlyContinue}
         (New-Object -ComObject Shell.Application).minimizeall()
         
     - name: Install and Configure Ngrok
