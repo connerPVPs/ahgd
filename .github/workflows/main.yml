@@ -1,5 +1,5 @@
 name: Windows - Ngrok
-
+on: push
 
 
 concurrency:
